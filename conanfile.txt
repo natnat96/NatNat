@@ -1,0 +1,7 @@
+[requires]
+sdl/2.24.0
+sdl_image/2.0.5
+
+[generators]
+cmake
+
