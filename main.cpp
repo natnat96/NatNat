@@ -38,19 +38,21 @@ public:
         SDL_RenderCopy(renderer, m_texture, &m_src, &m_dst);
     }
 
-    void move(direction d){
+    void move(direction d, float dt){
         switch (d)
         {
-        break; case direction::left : m_dst.x-=20;
-        break; case direction::right : m_dst.x+=20;
-        break; case direction::up : m_dst.y-=20;
-        break; case direction::down : m_dst.y+=20;
+        break; case direction::left : m_dst.x-=m_velocity*dt;
+        break; case direction::right : m_dst.x+=m_velocity*dt;
+        break; case direction::up : m_dst.y-=m_velocity*dt;
+        break; case direction::down : m_dst.y+=m_velocity*dt;
         }
     }
 private:
     SDL_Rect m_src;
     SDL_Rect m_dst;
     SDL_Texture* m_texture;
+    int m_velocity = 10000;
+
 };
 
 
@@ -83,38 +85,12 @@ int main(int argc, char* argv[])
         IMG_LoadTexture(renderer, "/Users/nathaliebecker/hellosdl/bird_down.png")
     );
 
-    
-
     // A basic main loop to prevent blocking
     bool is_running = true;
     SDL_Event event;
 
     while (is_running) 
     {
-        SDL_RenderClear(renderer);
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                is_running = false;
-            } 
-            else if (event.key.keysym.sym == SDLK_a) {
-                bird.move(direction::left);
-            } 
-            else if (event.key.keysym.sym == SDLK_s) {
-                bird.move(direction::down);
-            }
-            else if (event.key.keysym.sym == SDLK_d) {
-                bird.move(direction::right);
-            }
-            else if (event.key.keysym.sym == SDLK_w) {
-                bird.move(direction::up);
-            }
-            
-            int x;
-            int y;
-            SDL_GetMouseState(&x, &y);
-            //std::cout << "mouse pos " << x << '/' << y << std::endl;
-        }
-    
         int time_to_wait = frame_target_time - (SDL_GetTicks()-ticks_last_frame);
         if (time_to_wait > 0 && time_to_wait <= frame_target_time){
             SDL_Delay(time_to_wait);
@@ -124,10 +100,35 @@ int main(int argc, char* argv[])
         if (dt > 0.05f){
             dt = 0.05f;
         }
-        std::cout << "dt =" << dt << "   " <<(SDL_GetTicks() - ticks_last_frame)*3.6 << std::endl;
+
         ticks_last_frame = SDL_GetTicks();
 
 
+        SDL_RenderClear(renderer);
+
+
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                is_running = false;
+            } 
+            else if (event.key.keysym.sym == SDLK_a) {
+                bird.move(direction::left, dt);
+            } 
+            else if (event.key.keysym.sym == SDLK_s) {
+                bird.move(direction::down, dt);
+            }
+            else if (event.key.keysym.sym == SDLK_d) {
+                bird.move(direction::right, dt);
+            }
+            else if (event.key.keysym.sym == SDLK_w) {
+                bird.move(direction::up, dt);
+            }
+            
+            int x;
+            int y;
+            SDL_GetMouseState(&x, &y);
+            //std::cout << "mouse pos " << x << '/' << y << std::endl;
+        }
 
         bird.render(renderer);
         SDL_RenderPresent(renderer);
