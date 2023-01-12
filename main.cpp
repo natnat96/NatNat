@@ -9,6 +9,11 @@
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
 
+int fps = 60;
+unsigned int frame_target_time = 1000/fps;
+int ticks_last_frame = 0;
+
+
 enum class direction {
     left=0,
     right,
@@ -18,7 +23,7 @@ enum class direction {
 
 class character
 {
-    public:
+public:
     character(SDL_Rect src, SDL_Rect dst, SDL_Texture* texture){
         m_src = src;
         m_dst = dst;
@@ -42,7 +47,7 @@ class character
         break; case direction::down : m_dst.y+=20;
         }
     }
-    private:
+private:
     SDL_Rect m_src;
     SDL_Rect m_dst;
     SDL_Texture* m_texture;
@@ -78,6 +83,8 @@ int main(int argc, char* argv[])
         IMG_LoadTexture(renderer, "/Users/nathaliebecker/hellosdl/bird_down.png")
     );
 
+    
+
     // A basic main loop to prevent blocking
     bool is_running = true;
     SDL_Event event;
@@ -108,7 +115,20 @@ int main(int argc, char* argv[])
             //std::cout << "mouse pos " << x << '/' << y << std::endl;
         }
     
-        
+        int time_to_wait = frame_target_time - (SDL_GetTicks()-ticks_last_frame);
+        if (time_to_wait > 0 && time_to_wait <= frame_target_time){
+            SDL_Delay(time_to_wait);
+        }
+
+        float dt = (SDL_GetTicks() - ticks_last_frame)/1000.0f;
+        if (dt > 0.05f){
+            dt = 0.05f;
+        }
+        std::cout << "dt =" << dt << "   " <<(SDL_GetTicks() - ticks_last_frame)*3.6 << std::endl;
+        ticks_last_frame = SDL_GetTicks();
+
+
+
         bird.render(renderer);
         SDL_RenderPresent(renderer);
         SDL_Delay(16);
