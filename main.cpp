@@ -5,14 +5,16 @@
 #include "SDL2/SDL_image.h"
 #include <iostream>
 #include <stdio.h>
+#include <vector>
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
-
+    
 int fps = 60;
 unsigned int frame_target_time = 1000/fps;
 int ticks_last_frame = 0;
 
+
+namespace natnat
+{
 
 enum class direction {
     left=0,
@@ -21,24 +23,45 @@ enum class direction {
     down
 };
 
-class character
+class game_object
 {
 public:
-    character(SDL_Rect src, SDL_Rect dst, SDL_Texture* texture){
+    virtual void render(SDL_Renderer* renderer) = 0;
+    virtual void switch_texture(float dt) = 0;
+    virtual void move(direction d, float dt) = 0;
+};
+
+class character: public game_object
+{
+public:
+    character(SDL_Rect src, SDL_Rect dst, SDL_Texture* texture1, SDL_Texture* texture2){
         m_src = src;
         m_dst = dst;
-        m_texture = texture;
-        SDL_QueryTexture(m_texture, NULL, NULL, NULL, NULL);
+        m_texture1 = texture1;
+        m_texture2 = texture2;
     }
     ~character(){
-        SDL_DestroyTexture(m_texture);
+        SDL_DestroyTexture(m_texture1);
+        SDL_DestroyTexture(m_texture2);
     }
 
     void render(SDL_Renderer* renderer){
-        SDL_RenderCopy(renderer, m_texture, &m_src, &m_dst);
+        if (m_toggle_texture == false){
+            SDL_RenderCopy(renderer, m_texture1, &m_src, &m_dst);
+        }
+        else SDL_RenderCopy(renderer, m_texture2, &m_src, &m_dst);
+    }
+
+    void switch_texture(float dt){
+        m_time += dt;
+        if (m_time >= 0.5){
+            m_toggle_texture = !m_toggle_texture;
+            m_time = 0;
+        }
     }
 
     void move(direction d, float dt){
+        std::cout << dt << " dst: " << m_dst.x << '/' << m_dst.y <<  std::endl;
         switch (d)
         {
         break; case direction::left : m_dst.x-=m_velocity*dt;
@@ -50,93 +73,128 @@ public:
 private:
     SDL_Rect m_src;
     SDL_Rect m_dst;
-    SDL_Texture* m_texture;
-    int m_velocity = 10000;
-
+    SDL_Texture* m_texture1;
+    SDL_Texture* m_texture2;
+    int m_velocity = 1000;
+    float m_time = 0;
+    bool m_toggle_texture = false;
 };
 
 
-int main(int argc, char* argv[])
+
+class game
 {
+public:
 
-    SDL_Window *window;                    
-    SDL_Init(SDL_INIT_VIDEO);             
-
-    window = SDL_CreateWindow(
-        "An SDL2 window",                  // window title
-        SDL_WINDOWPOS_UNDEFINED,           // initial x position
-        SDL_WINDOWPOS_UNDEFINED,           // initial y position
-        640,                               // width, in pixels
-        480,                               // height, in pixels
-        SDL_WINDOW_OPENGL                  // flags - see below
-    );
-
-    // Check that the window was successfully created
-    if (window == NULL) {
-        // In the case that the window could not be made...
-        printf("Could not create window: %s\n", SDL_GetError());
-        return 1;
+    game(int width, int height){
+        m_window_width = width;
+        m_window_height = height;
+        m_window = SDL_CreateWindow(
+            "Game Window",                  
+            SDL_WINDOWPOS_UNDEFINED,           
+            SDL_WINDOWPOS_UNDEFINED,           
+            m_window_width,                               
+            m_window_height,                               
+            SDL_WINDOW_OPENGL                  
+        );
+        m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
+        m_running = true;
     }
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    character bird(
-        SDL_Rect{0, 0, 300, 230}, 
-        SDL_Rect{10, 10, 100, 73}, 
-        IMG_LoadTexture(renderer, "/Users/nathaliebecker/hellosdl/bird_down.png")
-    );
+    ~game(){
+        SDL_DestroyRenderer(m_renderer);
+        SDL_DestroyWindow(m_window);
+        SDL_Quit();
+    }
 
-    // A basic main loop to prevent blocking
-    bool is_running = true;
-    SDL_Event event;
+    bool is_running(){
+        return m_running;
+    }
 
-    while (is_running) 
-    {
+    void add_character(){
+        m_characters.push_back(new character(
+            SDL_Rect{0, 0, 300, 230}, 
+            SDL_Rect{10, 10, 100, 73}, 
+            IMG_LoadTexture(m_renderer, "C:/git/NatNat/bird_down.png"),
+            IMG_LoadTexture(m_renderer, "C:/git/NatNat/bird_up.png")));
+
+    }
+
+    void read_input(){
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT) {
+                m_running = false;
+            } 
+        }
+
+        const Uint8* keystates = SDL_GetKeyboardState(NULL);
+        
+        if(keystates[SDL_SCANCODE_LEFT] || keystates[SDL_SCANCODE_A]) {
+            m_characters[0]->move(direction::left, m_dt);
+        }
+        if(keystates[SDL_SCANCODE_RIGHT] || keystates[SDL_SCANCODE_D]) {
+            m_characters[0]->move(direction::right, m_dt);
+        }
+        if(keystates[SDL_SCANCODE_UP] || keystates[SDL_SCANCODE_W]) {
+            m_characters[0]->move(direction::up, m_dt);
+        }
+        if(keystates[SDL_SCANCODE_DOWN] || keystates[SDL_SCANCODE_S]) {
+            m_characters[0]->move(direction::down, m_dt);
+        }
+    }
+
+    void update(){
+        sleep();
+        m_characters[0]->switch_texture(m_dt);
+    }
+
+    void render(){
+        SDL_RenderClear(m_renderer);
+        for (auto& bird : m_characters){
+            bird->render(m_renderer);
+        }
+        SDL_RenderPresent(m_renderer);
+    }
+
+private:
+    void sleep(){
         int time_to_wait = frame_target_time - (SDL_GetTicks()-ticks_last_frame);
         if (time_to_wait > 0 && time_to_wait <= frame_target_time){
             SDL_Delay(time_to_wait);
         }
-
-        float dt = (SDL_GetTicks() - ticks_last_frame)/1000.0f;
-        if (dt > 0.05f){
-            dt = 0.05f;
+        m_dt = (SDL_GetTicks() - ticks_last_frame)/1000.0f;
+        if (m_dt > 0.05f){
+            m_dt = 0.05f;
         }
-
         ticks_last_frame = SDL_GetTicks();
-
-
-        SDL_RenderClear(renderer);
-
-
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
-                is_running = false;
-            } 
-            else if (event.key.keysym.sym == SDLK_a) {
-                bird.move(direction::left, dt);
-            } 
-            else if (event.key.keysym.sym == SDLK_s) {
-                bird.move(direction::down, dt);
-            }
-            else if (event.key.keysym.sym == SDLK_d) {
-                bird.move(direction::right, dt);
-            }
-            else if (event.key.keysym.sym == SDLK_w) {
-                bird.move(direction::up, dt);
-            }
-            
-            int x;
-            int y;
-            SDL_GetMouseState(&x, &y);
-            //std::cout << "mouse pos " << x << '/' << y << std::endl;
-        }
-
-        bird.render(renderer);
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16);
     }
-    
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
+
+private:
+    SDL_Window* m_window;
+    int m_window_width;
+    int m_window_height;
+    SDL_Renderer* m_renderer;
+    bool m_running;
+    float m_dt;
+    std::vector<game_object*> m_characters;
+};
+
+} // namespace natnat
+
+
+
+int main(int argc, char* argv[])
+{
+    natnat::game game(800, 600);
+
+    game.add_character();
+
+    while (game.is_running()){
+        game.read_input();
+        game.update();
+        game.render();
+    } 
+
     return 0;
 }
