@@ -6,6 +6,7 @@
 #include <iostream>
 #include <stdio.h>
 #include <vector>
+#include <unordered_map> 
 
     
 int fps = 60;
@@ -16,69 +17,93 @@ int ticks_last_frame = 0;
 namespace natnat
 {
 
-enum class direction {
-    left=0,
-    right,
-    up,
-    down
+/**
+ * Components
+*/
+struct sprite{
+    SDL_Rect src;
+    SDL_Rect dst;
+    SDL_Texture* texture;
 };
 
-class game_object
-{
-public:
-    virtual void render(SDL_Renderer* renderer) = 0;
-    virtual void switch_texture(float dt) = 0;
-    virtual void move(direction d, float dt) = 0;
+struct transform{
+    float pos_x;
+    float pos_y;
+    float vel_x;
+    float vel_y;
 };
-
-class character: public game_object
-{
+/**
+ * Registry
+*/
+class registry {
 public:
-    character(SDL_Rect src, SDL_Rect dst, SDL_Texture* texture1, SDL_Texture* texture2){
-        m_src = src;
-        m_dst = dst;
-        m_texture1 = texture1;
-        m_texture2 = texture2;
+    std::size_t create_entity() {
+        entity++;
+        entities.push_back(entity);
+        return entity;
     }
-    ~character(){
-        SDL_DestroyTexture(m_texture1);
-        SDL_DestroyTexture(m_texture2);
-    }
+    std::unordered_map<std::size_t, sprite> sprite_components;
+    std::unordered_map<std::size_t, transform> transform_components;
+    std::vector<std::size_t> entities;
 
-    void render(SDL_Renderer* renderer){
-        if (m_toggle_texture == false){
-            SDL_RenderCopy(renderer, m_texture1, &m_src, &m_dst);
-        }
-        else SDL_RenderCopy(renderer, m_texture2, &m_src, &m_dst);
-    }
-
-    void switch_texture(float dt){
-        m_time += dt;
-        if (m_time >= 0.5){
-            m_toggle_texture = !m_toggle_texture;
-            m_time = 0;
-        }
-    }
-
-    void move(direction d, float dt){
-        std::cout << dt << " dst: " << m_dst.x << '/' << m_dst.y <<  std::endl;
-        switch (d)
-        {
-        break; case direction::left : m_dst.x-=m_velocity*dt;
-        break; case direction::right : m_dst.x+=m_velocity*dt;
-        break; case direction::up : m_dst.y-=m_velocity*dt;
-        break; case direction::down : m_dst.y+=m_velocity*dt;
-        }
-    }
 private:
-    SDL_Rect m_src;
-    SDL_Rect m_dst;
-    SDL_Texture* m_texture1;
-    SDL_Texture* m_texture2;
-    int m_velocity = 1000;
-    float m_time = 0;
-    bool m_toggle_texture = false;
+    std::size_t entity{0};
 };
+ 
+
+/**
+ * Systems
+*/
+struct system
+{
+    virtual void update(registry& r, float dt) {};
+    virtual void render(registry& r, SDL_Renderer* renderer) {};
+};
+
+struct movement_system : public system
+{
+    void update(registry& r, float dt) override 
+    {
+        for (auto& entity : r.entities){
+            if (r.transform_components.contains(entity)){
+                auto& current = r.transform_components[entity];
+                current.pos_x += current.vel_x*dt;
+                current.pos_y += current.vel_y*dt;
+            }
+        }
+    }
+};
+
+struct sprite_system : public system 
+{
+    void update(registry& r, float dt) override 
+    {
+        for (auto& entity : r.entities){
+            if (r.transform_components.contains(entity) && r.sprite_components.contains(entity)){
+                auto& transform = r.transform_components[entity];
+                auto& sprite = r.sprite_components[entity];
+                sprite.dst.x = transform.pos_x;
+                sprite.dst.y = transform.pos_y;
+            }
+        }
+    }
+
+    void render(registry& r, SDL_Renderer* renderer) override 
+    {
+        for (auto& entity : r.entities){
+            if (r.sprite_components.contains(entity)){
+                SDL_RenderCopy(
+                    renderer, 
+                    r.sprite_components[entity].texture, 
+                    &r.sprite_components[entity].src, 
+                    &r.sprite_components[entity].dst
+                );
+            }
+        }
+    }
+};
+
+
 
 
 
@@ -98,6 +123,10 @@ public:
             SDL_WINDOW_OPENGL                  
         );
         m_renderer = SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED);
+
+        m_systems.push_back(new movement_system);
+        m_systems.push_back(new sprite_system);
+
         m_running = true;
     }
 
@@ -111,14 +140,7 @@ public:
         return m_running;
     }
 
-    void add_character(){
-        m_characters.push_back(new character(
-            SDL_Rect{0, 0, 300, 230}, 
-            SDL_Rect{10, 10, 100, 73}, 
-            IMG_LoadTexture(m_renderer, "C:/git/NatNat/bird_down.png"),
-            IMG_LoadTexture(m_renderer, "C:/git/NatNat/bird_up.png")));
-
-    }
+    
 
     void read_input(){
         SDL_Event event;
@@ -129,31 +151,25 @@ public:
         }
 
         const Uint8* keystates = SDL_GetKeyboardState(NULL);
-        
-        if(keystates[SDL_SCANCODE_LEFT] || keystates[SDL_SCANCODE_A]) {
-            m_characters[0]->move(direction::left, m_dt);
-        }
-        if(keystates[SDL_SCANCODE_RIGHT] || keystates[SDL_SCANCODE_D]) {
-            m_characters[0]->move(direction::right, m_dt);
-        }
-        if(keystates[SDL_SCANCODE_UP] || keystates[SDL_SCANCODE_W]) {
-            m_characters[0]->move(direction::up, m_dt);
-        }
-        if(keystates[SDL_SCANCODE_DOWN] || keystates[SDL_SCANCODE_S]) {
-            m_characters[0]->move(direction::down, m_dt);
-        }
     }
 
     void update(){
         sleep();
-        m_characters[0]->switch_texture(m_dt);
+        for (auto& system : m_systems){
+            // system = m_systems[i]
+            system->update(m_registry, m_dt);
+        }
     }
 
     void render(){
         SDL_RenderClear(m_renderer);
-        for (auto& bird : m_characters){
-            bird->render(m_renderer);
+
+        for (auto& system : m_systems){
+            // system = m_systems[i]
+            system->render(m_registry, m_renderer);
         }
+
+
         SDL_RenderPresent(m_renderer);
     }
 
@@ -171,16 +187,26 @@ private:
     }
 
 private:
+
     SDL_Window* m_window;
     int m_window_width;
     int m_window_height;
-    SDL_Renderer* m_renderer;
+
     bool m_running;
     float m_dt;
-    std::vector<game_object*> m_characters;
+    std::vector<system*> m_systems;
+public:
+    registry m_registry;    
+    SDL_Renderer* m_renderer;
 };
 
+
 } // namespace natnat
+
+
+void add_bird(int pos_x , int pos_y , natnat::game& g){
+    
+}
 
 
 
@@ -188,7 +214,22 @@ int main(int argc, char* argv[])
 {
     natnat::game game(800, 600);
 
-    game.add_character();
+    std::size_t bird = game.m_registry.create_entity();
+    game.m_registry.sprite_components[bird] = natnat::sprite{
+            SDL_Rect{0, 0, 300, 230}, 
+            SDL_Rect{10, 10, 100, 73}, 
+            IMG_LoadTexture(game.m_renderer, "C:/git/NatNat/bird_down.png")
+    };
+    game.m_registry.transform_components[bird] = natnat::transform{
+            100, 100, 10, 10
+    };
+
+    std::size_t bird2 = game.m_registry.create_entity();
+    game.m_registry.sprite_components[bird2] = natnat::sprite{
+            SDL_Rect{0, 0, 300, 230}, 
+            SDL_Rect{150, 300, 100, 73}, 
+            IMG_LoadTexture(game.m_renderer, "C:/git/NatNat/bird_down.png")
+    };
 
     while (game.is_running()){
         game.read_input();
